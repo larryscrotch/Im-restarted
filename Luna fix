@@ -1,0 +1,123 @@
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local Toggle = Instance.new("BoolValue")
+Toggle.Parent = game.Workspace
+
+local thermalVision = Instance.new("ColorCorrectionEffect")
+thermalVision.Saturation = -1
+thermalVision.Brightness = -0.02
+thermalVision.Name = "Thermal Vision"
+thermalVision.Parent = Lighting
+
+local thermalComponents = {}
+
+local function createHighlight(character)
+  if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+  local highlight = Instance.new("Highlight")
+  highlight.Adornee = character
+  highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+  highlight.FillColor = Color3.fromRGB(0, 255, 255)
+  highlight.FillTransparency = 0.4
+  highlight.OutlineTransparency = 1
+  highlight.Parent = CoreGui
+  return highlight
+end
+
+local function destroyHighlight(highlight)
+  if highlight then
+    highlight:Destroy()
+  end
+end
+
+local function applyHighlight(player)
+  task.defer(function()
+    local function onCharacterAdded(char)
+      local userId = player.UserId
+      if thermalComponents[userId] then
+        destroyHighlight(thermalComponents[userId].highlight)
+        thermalComponents[userId] = nil
+      end
+      if char and char:FindFirstChild("HumanoidRootPart") then
+        local highlight = createHighlight(char)
+        if highlight then
+          thermalComponents[userId] = {
+            highlight = highlight,
+            connections = {},
+          }
+          local comp = thermalComponents[userId]
+          comp.connections[#comp.connections + 1] = char.Destroying:Connect(function()
+            destroyHighlight(comp.highlight)
+            thermalComponents[userId] = nil
+          end)
+        end
+      end
+    end
+
+    onCharacterAdded(player.Character)
+    player.CharacterAdded:Connect(onCharacterAdded)
+    player.CharacterRemoving:Connect(function()
+      local userId = player.UserId
+      if thermalComponents[userId] then
+        destroyHighlight(thermalComponents[userId].highlight)
+        thermalComponents[userId] = nil
+      end
+    end)
+  end)
+end
+
+local function onToggle()
+  thermalVision.Enabled = Toggle.Value
+  if Toggle.Value then
+    for _, player in Players:GetPlayers() do
+      if player ~= LocalPlayer and not thermalComponents[player.UserId] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        applyHighlight(player)
+      end
+    end
+  else
+    for userId, comp in pairs(thermalComponents) do
+      if comp and comp.highlight then
+        destroyHighlight(comp.highlight)
+        thermalComponents[userId] = nil
+      end
+    end
+  end
+end
+
+local function checkProximity()
+  local localPlayerPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
+  if localPlayerPos then
+    for userId, comp in pairs(thermalComponents) do
+      local player = Players:GetPlayerByUserId(userId)
+      if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local targetPos = player.Character.HumanoidRootPart.Position
+        local distance = (localPlayerPos - targetPos).Magnitude
+        if distance <= 100 then
+          -- Removed beeping functionality
+        end
+      end
+    end
+  end
+end
+
+-- Initial setup
+for _, player in ipairs(Players:GetPlayers()) do
+  if player ~= LocalPlayer then
+    applyHighlight(player)
+  end
+end
+
+Players.PlayerAdded:Connect(applyHighlight)
+Toggle.Changed:Connect(onToggle)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+  if not gameProcessed and input.KeyCode == Enum.KeyCode.KeypadMinus then
+    Toggle.Value = not Toggle.Value
+  end
+end)
+RunService.Heartbeat:Connect(checkProximity)
+
+print("Thermal Vision Script Loaded!")
